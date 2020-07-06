@@ -1,101 +1,116 @@
+from mysql.connector import MySQLConnection, Error
+from PiDBConfig import read_db_config
+
 import tkinter as tk
-import cv2
-from PIL import Image, ImageTk
-import numpy as np
-import threading
-import imutils
-from imutils.video import WebcamVideoStream
-
-import tensorflow as tf
-from tensorflow import keras
-import os
-
+DisplayRow = 5
 # Create a window
 window = tk.Tk()
-window.title("Face Input")
+window.title("Database Status")
 window.config(bg='white')
 
-#Graphics window
-VideoFrame = tk.Frame(window, width=600, height=480)
-VideoFrame.grid(row=1, column=0,columnspan=3, padx=10, pady=2)
-DisplayFrame = tk.Label(VideoFrame)
-DisplayFrame.grid(row=1, column=0, columnspan=3)
+# Connect to database
+def GetStatusFromDatabase():
+	dbconfig = read_db_config()
+	conn = MySQLConnection(**dbconfig)
+	cursor = conn.cursor()
+	cursor.execute("SELECT status FROM parking_lot")
+	Statuses = cursor.fetchall()
 
-DatabaseStatus = tk.Label(text="Database is ready", fg='orange', bg='white')
-DatabaseStatus.grid(row=2, column=2)
-RecogResult = tk.Label(text="Name + accuracy", fg='orange', bg='white')
-RecogResult.grid(row=2, column=0)
-PositionRec = tk.Label(text="Shortest", fg='orange', bg='white')
-PositionRec.grid(row=2, column=1)
-InputLicence = tk.Entry(fg='black', bg='white')
-InputLicence.grid(row=3,column=1)
+	cursor.close()
+	conn.close()
+	return Statuses
 
-InstructionText = "Please, align your face in the center of the screen!"
-InstructionMessage = tk.Label(text=InstructionText, fg='orange', bg='white')
-InstructionMessage.grid(row = 0, column = 0,columnspan=3)
-# Functions of Buttons are here:
-def ExitFunction():
-    global cap
-    # cap.stop()
-    cap.release()
-    window.quit()
+def GetActiveUser():
+	dbconfig = read_db_config()
+	conn = MySQLConnection(**dbconfig)
+	cursor = conn.cursor()
+	cursor.execute("SELECT * FROM vehicle")
+	Data = cursor.fetchall()
+	
+	cursor.close()
+	conn.close()
+	return Data
+	
+def ConvertToMatrix(ListStatus):
+    CreateMatrix = []
+    CreateListInMatrix = []
+    RowMatrix = 5
+    ColMatrix = 3
+    #CreateMatrix.append(['*']*ColMatrix)
+    for NumberInRow in range(RowMatrix):
+        for NumberInCol in range(ColMatrix):
+            CreateListInMatrix.append(ListStatus[NumberInRow + NumberInCol * RowMatrix][0])
+        CreateMatrix.append(CreateListInMatrix)
+        CreateListInMatrix = []
+    #CreateMatrix.append(['*']*ColMatrix)
+    return CreateMatrix
 
-RegisterButton = tk.Button(text='Login Parking', fg='white', bg='orange')
-RegisterButton.grid(row=3, column=0)
-ExitButton = tk.Button(text='Close Program', fg='white', bg='orange', command=ExitFunction)
-ExitButton.grid(row=3,column=2)
+ParkingFrame = tk.Frame(window, bg='white')
+UserFrame = tk.Frame(window,bg='white')
+
+ParkingFrame.grid(row=0, column=0)
+UserFrame.grid(row=0, column=1)
+
+window.grid_columnconfigure(0, weight=1)
+window.grid_columnconfigure(1, weight=1)
+# All the text is here
+ParkingText = tk.Label(ParkingFrame, text="Green is vacancy \nRed is occupied", fg='black', bg='white')
+ParkingText.grid(row=0, column=0, columnspan=3)
+UserText = tk.Label(UserFrame, text="Active user", fg='black', bg='white')
+UserText.grid(row=0, column=0)
+# All the button is here
+ListUser = tk.Listbox(UserFrame,fg='black', bg='white', width=len("CustomerID" + ' | ' +"Vehicle number"))
+UserScroll = tk.Scrollbar(UserFrame,orient='vertical', command=ListUser.yview)
+UserScroll.grid(row=0,column=1)
+ListUser.config(yscrollcommand=UserScroll.set)
+#----MAIN----
+def AutoRun():
+	AllStatus = GetStatusFromDatabase()
+	#print(AllStatus)
+	Matrix = ConvertToMatrix(AllStatus)
+	#print(Matrix)
+	A_User = GetActiveUser()
+	#print(A_User)
+
+	RowMatrix = 5
+	ColMatrix = 3
+	for NumberInRow in range(RowMatrix):
+		for NumberInCol in range(ColMatrix):
+			ButtonCol = tk.Button(ParkingFrame, text=str((NumberInRow + NumberInCol * RowMatrix)+1), width=4)
+			if Matrix[NumberInRow][NumberInCol] == 1:
+				ButtonCol.config(bg='green')
+			else:
+				ButtonCol.config(bg='red')
+			ButtonCol.grid(row=NumberInRow+1, column=NumberInCol)
+	ListUser.insert(0, "CustomerID" + ' | ' +"Vehicle number")
+	ListUser.delete(first=1, last=(len(A_User)+2))
+	for user in range(len(A_User)):
+		Content = str(A_User[user][0]) + '  '*len('CustomerID') + str(A_User[user][1])
+		# //DisplayCustomerID = tk.Entry(window, bg='white',fg='black')
+		# //DisplayVehicle = tk.Entry(window, bg='white',fg='black')
+		
+		# //DisplayCustomerID.grid_remove(row=len(A_User)+1)
+		# //DisplayVehicle.grid_remove(row=len(A_User)+1)
+		
+		# //DisplayCustomerID.grid(row=user+1,column=3)
+		# //DisplayVehicle.grid(row=user+1,column=4)
+		
+		# //DisplayCustomerID.insert(1,str(A_User[user][0]))
+		# //DisplayVehicle.insert(1,str(A_User[user][1]) )	
+		# Using List box
+		
+		ListUser.insert(user+1,Content)
+		ListUser.grid(row=1,column=0)
+		
+		
+	window.after(1000, AutoRun)
+			
+	# //RegisterButton = tk.Button(text='Login Parking', fg='white', bg='orange')
+	# //RegisterButton.grid(row=3, column=0)
 
 
-cap = cv2.VideoCapture(0)
-def PrepareModel():
-    # Load trained model
-    my_model = tf.keras.models.load_model('Output/Recognizer_V6')
-    my_model.summary()
-    # Get the class name
-    folder = [name for name in os.listdir(data_dir) 
-            if os.path.isdir(os.path.join(data_dir, name))]
-    Class_names = np.array(folder)
-    # Adding Softmax layer 
-    probability_model = tf.keras.Sequential([my_model, 
-                                            tf.keras.layers.Softmax()])
-    return Class_names, probability_model
-
-def ProcessAndPredict(frame, probability_model, Class_names):
-    frame = cv2.flip(frame, 1)
-    Convert2RGB = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    DetectFace = GetFaceLocation(Convert2RGB)
-    if DetectFace == (0,):
-        ErrorMes = 'Can not detect face'
-        cv2.putText(frame, ErrorMes, (100,100), font, 1, (0,0,255), 2, cv2.LINE_4 )
-        return None
-    else:
-        Cropped = CropImage(Convert2RGB,DetectFace)
-        ConvertPixel = Cropped / 255.0
-        ArrayImage = (np.expand_dims(ConvertPixel,0))
-        prediction = probability_model.predict(ArrayImage)
-        result = np.argmax(prediction)
-        result_name = [str(Class_names[result])]
-        NameFromRecognize = result_name[0]
-        TrustPercent = "{}: {:.2f}%".format(NameFromRecognize, prediction[0,0] * 100)
-        return NameFromRecognize, TrustPercent
-
-def ShowVideo():
-    _,frame = cap.read()
-
-    flip = cv2.flip(frame, 1)
-    cv2image = cv2.cvtColor(flip, cv2.COLOR_BGR2RGB)
-    img = Image.fromarray(cv2image)
-
-    imgtk = ImageTk.PhotoImage(image=img)
-    DisplayFrame.imgtk = imgtk
-    DisplayFrame.configure(image=imgtk)
-    DisplayFrame.after(1, ShowVideo)
-    return frame
-while(cap.isOpened()):
-    frame = ShowVideo() 
-    ClassName, LoadModel = PrepareModel()
-    ResultName, ResultPercent = ProcessAndPredict(frame, model, classname)
-    RecogResult = tk.Label(text=ResultName + ' ' + ResultPercent, fg='orange', bg='white')
-    RecogResult.grid(row=2, column=0)
-    window.mainloop()
-      
+AutoRun()
+window.mainloop()
+	
+	
+	
